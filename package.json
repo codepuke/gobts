@@ -1,0 +1,60 @@
+{
+  "name": "gobts",
+  "version": "0.1.0",
+  "description": "TypeScript port of Go's encoding/gob binary serialization format",
+  "type": "module",
+  "author": "Dan Wolf",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/codepuke/gobts.git"
+  },
+  "homepage": "https://github.com/codepuke/gobts#readme",
+  "bugs": {
+    "url": "https://github.com/codepuke/gobts/issues"
+  },
+  "keywords": [
+    "gob",
+    "encoding",
+    "serialization",
+    "go",
+    "binary",
+    "wire-format",
+    "codec"
+  ],
+  "files": [
+    "dist",
+    "src"
+  ],
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./codecs": {
+      "import": "./dist/codecs/index.js",
+      "types": "./dist/codecs/index.d.ts"
+    },
+    "./codecs/time": {
+      "import": "./dist/codecs/time.js",
+      "types": "./dist/codecs/time.d.ts"
+    },
+    "./codecs/uuid": {
+      "import": "./dist/codecs/uuid.js",
+      "types": "./dist/codecs/uuid.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "bunx tsc -p tsconfig.build.json",
+    "test": "bun test",
+    "typecheck": "bunx tsc --noEmit",
+    "bench": "bun bench/index.bench.ts",
+    "prepublishOnly": "bun test && bun run build"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "fast-check": "^4.7.0",
+    "mitata": "^1.0.34",
+    "typescript": "^5.9.0"
+  }
+}
