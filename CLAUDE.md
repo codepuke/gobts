@@ -57,6 +57,12 @@ tests/
 bench/
 └── index.bench.ts      # mitata vs JSON.stringify/parse
 
+examples/               # Doc examples — snippet regions published to codepuke
+└── *.test.ts           # Run by `bun test`; see "Documentation snippets"
+
+docs/                   # Numbered docs pages published to codepuke
+└── NN-*.md             # Nav order is filename order; NN- is stripped from the slug
+
 PRD.md                  # Design doc — authoritative
 PROGRESS.md             # Phase tracker — read and update every session
 CLAUDE.md               # This file
@@ -135,6 +141,32 @@ echo "" | go run ./tests/go_verify struct_simple   # manual verifier check
 
 Run `go_verify` tests early and often during encoder work. They catch symmetric bugs that TS-only round-trips will happily pass.
 
+## Documentation snippets
+
+`examples/*.test.ts` and `docs/*.md` are a published contract with the
+`codepuke` site, not private scratch files. The contract is
+`../codepuke/SYNCING.md`; `cmd/sync` runs there, never here.
+
+- Code between `// snippet:start <topic>` and `// snippet:end` is extracted and
+  rendered on the docs site. The marker must be the only thing on its line —
+  never write the marker tokens in prose, or the sync will try to parse them.
+- Keep imports and assertions **outside** the region. The extracted snippet is
+  dedented and trimmed, so a region inside a test body yields clean top-level
+  code with no test scaffolding and no `../src/index.ts` import path leaking
+  into the docs.
+- A topic id is `[a-z0-9][a-z0-9-]*`, appears at most once per file, and at most
+  once per language across all repos. The site renders every language's variant
+  of a topic in one tabbed block, so the `pygob`, `gobdotnet`, and `gobspect`
+  variants must use the same id **and the same fixture data** — see the topic
+  table in `PROGRESS.md` → "Discovered work".
+- Snippets must come from code the test suite executes. Never move a marked
+  region without checking what references it; renaming a topic changes the site.
+- Every topic needs a `:::examples <topic>` reference in some `docs/` page,
+  otherwise it is extracted but never rendered.
+- Anything malformed fails the sync loudly. Before finishing, check that
+  `snippet:start` and `snippet:end` counts match and that the defined topic set
+  equals the set referenced from `docs/`.
+
 ## When making changes
 
 - **New feature or wire-format behavior:** update `PRD.md` in the same PR. The PRD is the source of truth.
@@ -142,6 +174,7 @@ Run `go_verify` tests early and often during encoder work. They catch symmetric 
 - **Public API additions:** update the `exports` map in `package.json` if the feature needs a new subpath. Update `src/index.ts` for root-level exports.
 - **Performance work:** run benchmarks before and after. Commit results under `bench/results/`.
 - **Type-level changes to `InferSchema<S>`:** add compile-time assertion tests (`type _ = Expect<Equal<...>>`). These are free — they run at typecheck time, not runtime.
+- **Snippet or docs changes:** keep `examples/` and `docs/` in sync — every topic defined must be referenced, and every topic referenced must be defined.
 - **Any substantive session:** update `PROGRESS.md` before finishing.
 
 ## What NOT to do

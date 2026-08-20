@@ -79,8 +79,13 @@ export interface MarshalerField {
 export interface SemanticField<T = unknown> {
   readonly kind: 'semantic';
   readonly wire: GobFieldType;
-  readonly encode: (value: T) => unknown;
-  readonly decode: (wire: unknown) => T;
+  // Method syntax, not a readonly property: TS checks property-typed function
+  // parameters contravariantly, which would make SemanticField<Status>
+  // unassignable to SemanticField<unknown> and so unusable inside a Schema.
+  // Method parameters are checked bivariantly, which is what a field
+  // descriptor needs. Type-level only — no runtime difference.
+  encode(value: T): unknown;
+  decode(wire: unknown): T;
   readonly zero: T;
 }
 
