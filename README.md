@@ -292,7 +292,29 @@ dec.register('main.Point', fields => ({
 const result = dec.decode();
 ```
 
-The Go type name passed to `register` is the fully-qualified name Go uses at runtime (e.g., `"main.Point"`, `"mypkg.Status"`).
+### Which name to register
+
+An interface value carries **two** names on the wire, and `register` accepts either:
+
+| Name | Where it comes from | Example |
+|------|---------------------|---------|
+| Qualified | The interface header — whatever was passed to `gob.Register` on the Go side | `"main.Point"` |
+| Unqualified | The inline type definition's `CommonType.Name` | `"Point"` |
+
+The qualified name is tried first, so it wins when both are registered — use it
+to disambiguate same-named types from different packages. The unqualified name
+is the portable choice: it is what `pygob` and `gobdotnet` key their decode-side
+registries on, and it is also the name a **top-level** (non-interface) struct is
+matched by.
+
+> **The qualified name is not always `main.X`.** Go builds it from the full
+> import path, so a type outside `package main` registers as
+> `"github.com/you/pkg.Point"`, not `"pkg.Point"`. If you are unsure of the
+> exact string, register the unqualified name instead.
+
+Note the asymmetry with the encoder: `encoder.register(goName, schema)` writes
+`goName` into the interface header, so it must be the **qualified** name that
+the Go decoder expects.
 
 ---
 
@@ -510,7 +532,7 @@ gob.NewDecoder(bytes.NewReader(data)).Decode(&p)
 
 - **Integers default to `bigint`.** Convert with `Number(x)` when you know the value is safe (≤ `Number.MAX_SAFE_INTEGER`).
 - **`time.Time` loses offset and sub-millisecond precision.** Register a custom codec for nanosecond or offset fidelity.
-- **`interface{}` encoding requires type registration** (`encoder.register(goName, schema)`). Decoding is always self-describing and requires no registration.
+- **`interface{}` encoding requires type registration** (`encoder.register(goName, schema)`) with the fully-qualified Go name. Decoding is always self-describing and requires no registration; registering a decode-side factory is optional, and accepts either the qualified or the unqualified name.
 - **No async API in v1.** Use `decoder.feed()` inside a chunk loop for streaming over WebSockets or Node streams.
 - **Array length not preserved.** `[3]int` decodes to `bigint[]` of length 3; re-encode with `ArrayOf(GOB_INT, 3)` to restore wire fidelity.
 - **Map ordering is non-deterministic** in Go. Byte-level comparison of map-containing gob streams is unreliable — decode and compare structurally.

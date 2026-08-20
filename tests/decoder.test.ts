@@ -289,6 +289,51 @@ describe('interface decoding', () => {
     expect((iface as GobObject).get('X')).toBe(1n);
     expect((iface as GobObject).get('Y')).toBe(2n);
   });
+
+  // An interface value carries TWO names: the package-qualified name from
+  // gob.Register in the interface header ("main.Point"), and the unqualified
+  // CommonType.Name in the inline type definition ("Point"). Both must resolve
+  // a registered factory. Regression: the qualified name used to be read off
+  // the wire and discarded, so register('main.Point', ...) silently did nothing.
+  test('registered factory fires for the qualified interface name', () => {
+    const { gobBytes } = loadTestdata('interface_value');
+    const dec = new GobDecoder(gobBytes);
+    dec.register('main.Point', (fields) => ({
+      px: Number(fields['X'] as bigint),
+      py: Number(fields['Y'] as bigint),
+    }));
+    const v = dec.decode() as GobObject;
+    expect(v.get('Value')).toEqual({ px: 1, py: 2 });
+  });
+
+  test('registered factory fires for the unqualified struct name', () => {
+    const { gobBytes } = loadTestdata('interface_value');
+    const dec = new GobDecoder(gobBytes);
+    dec.register('Point', (fields) => ({
+      px: Number(fields['X'] as bigint),
+      py: Number(fields['Y'] as bigint),
+    }));
+    const v = dec.decode() as GobObject;
+    expect(v.get('Value')).toEqual({ px: 1, py: 2 });
+  });
+
+  test('qualified name wins when both are registered', () => {
+    const { gobBytes } = loadTestdata('interface_value');
+    const dec = new GobDecoder(gobBytes);
+    dec.register('Point', () => 'unqualified');
+    dec.register('main.Point', () => 'qualified');
+    const v = dec.decode() as GobObject;
+    expect(v.get('Value')).toBe('qualified');
+  });
+
+  test('an unrelated qualified registration does not fire', () => {
+    const { gobBytes } = loadTestdata('interface_value');
+    const dec = new GobDecoder(gobBytes);
+    dec.register('other.Point', () => 'wrong');
+    const v = dec.decode() as GobObject;
+    expect(v.get('Value')).toBeInstanceOf(GobObject);
+    expect((v.get('Value') as GobObject).type).toBe('Point');
+  });
 });
 
 describe('multi-message stream', () => {

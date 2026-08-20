@@ -13,11 +13,11 @@ Working log for implementing `gobts`. Claude Code reads this at the start of eac
 
 ## Current state
 
-**Phase:** All phases complete ✅
-**Last session:** 2026-04-18 (Session 2) — All phases 0–7 complete.
-**Branch:** —
+**Phase:** All phases complete ✅ — plus documentation-snippet integration (2026-08-20).
+**Last session:** 2026-08-20 (Session 3) — codepuke snippet markers + `docs/` pages.
+**Branch:** main
 
-**Next session:** All acceptance criteria met. Consider revisiting performance (see bench/results/baseline.md for root-cause analysis), or move to v1 release prep.
+**Next session:** Two decoder/API issues surfaced while writing the doc examples — see "Discovered work". Otherwise: performance (see bench/results/baseline.md) or v1 release prep.
 
 ---
 
@@ -171,7 +171,134 @@ _(none — all phases complete)_
 
 ## Discovered work
 
-_(empty — to be filled in as implementation surfaces unplanned items)_
+### 1. `SemanticField<T>` was unusable inside a `Schema` (fixed 2026-08-20)
+
+`SemanticField<T>` declared `encode` as a readonly *property*, which TypeScript
+checks contravariantly. That made `SemanticField<Status>` unassignable to
+`SemanticField<unknown>`, so the README's own `SemanticType` example did not
+compile once placed in a `Schema`. Changed to method syntax (bivariant) in
+`src/types.ts`. Type-level only — no runtime or wire change.
+
+### 2. `GobDecoder.register()` never fired for `interface{}` values (fixed 2026-08-20)
+
+`_decodeInterface` read the package-qualified concrete type name off the wire
+and discarded it, so the factory lookup in `_decodeStruct` saw only the struct's
+own wire name. `dec.register('main.Point', …)` — exactly what README.md
+documented — silently did nothing.
+
+**Evidence.** An interface value carries two distinct names. The Go-generated
+`tests/testdata/interface_value.gob` shows both: `0a "main.Point"` in the
+interface header, then `05 "Point"` as the inline type definition's
+`CommonType.Name`. Go's own decoder keys on the qualified one
+(`encoding/gob/decode.go:700`, "name not registered for interface"), and
+`gob.Register` builds it from the **full import path** — so it is `main.Point`
+only in `package main`, otherwise `github.com/you/pkg.Point`.
+
+**Sister-port precedent.** Both ports key their decode-side registry on the
+*unqualified* name and document the asymmetry (qualified for encode, unqualified
+for decode): `gobdotnet` README shows `dec.Register<Point>("Point")` alongside
+`enc.Register("main.Point", …)`; `pygob`'s decoder `register()` is effectively
+write-only and documented as not required, because decoding is self-describing.
+
+**Resolution — accept both, qualified first.** `_decodeStruct` now takes an
+optional `qualifiedName`, supplied only on the interface path, and prefers it
+over `structT.common.name`. This makes the documented qualified form work,
+disambiguates same-named types from different packages, and keeps the
+unqualified name — the portable key the sister ports use, and the one top-level
+structs already matched — as the fallback. `GobObject.type` is unchanged
+(unqualified), so the testdata sidecars still match.
+
+Regression tests in `tests/decoder.test.ts` → "interface decoding" cover all
+four cases: qualified fires, unqualified fires, qualified wins when both are
+registered, and an unrelated qualified name does not fire.
+
+README.md's "Registering concrete types" section was rewritten — it was the
+actual source of the wrong instruction — and `docs/04-go-interop.md` gained a
+"Two names, one value" section. The `interface-values` snippet still shows the
+`GobObject` path, which is the variant that stays honest across all four
+languages.
+
+### 3. Two pre-existing typecheck errors in `tests/encoder.test.ts`
+
+Lines 470 and 485: `expect(...).toEqual(...)` resolves to the `(expected:
+undefined)` overload under the current `bun-types`. Predates this session;
+`bun test` passes. Worth pinning or reworking so `bunx tsc --noEmit` is clean.
+
+### 4. Cross-language snippet topic contract (codepuke)
+
+gobts is the **first mover** — no sibling repo had any `snippet:start` marker,
+and `content/manifest.json` listed every source with `"topics": []`. The 16 ids
+below are therefore now the contract. `pygob`, `gobdotnet`, and `gobspect` must
+reuse each id **verbatim**, and use the same fixture data, or the site's tabbed
+blocks will show variants doing different things.
+
+Topics and their host files (see CLAUDE.md → "Documentation snippets"):
+
+| Topic | File |
+|---|---|
+| `define-schema`, `schema-type-inference`, `semantic-type` | `examples/schemas.test.ts` |
+| `encode-struct`, `decode-struct`, `nested-struct`, `dynamic-field-access` | `examples/structs.test.ts` |
+| `encode-slice`, `encode-map` | `examples/collections.test.ts` |
+| `stream-encode`, `stream-decode`, `end-of-stream` | `examples/streaming.test.ts` |
+| `interface-values` | `examples/interfaces.test.ts` |
+| `time-values`, `uuid-values`, `custom-marshaler` | `examples/codecs.test.ts` |
+
+Shared fixture data every port must mirror:
+
+| Topic | Go shape | Value |
+|---|---|---|
+| `define-schema`, `encode-struct`, `decode-struct`, `dynamic-field-access` | `type Point struct { X, Y int }` | `{X: 3, Y: 4}` |
+| `nested-struct` | `type Line struct { From, To Point }` | `From{1,2}`, `To{3,4}` |
+| `schema-type-inference` | `type Person struct { Name string; Age int }` | `{"Ada", 36}` |
+| `stream-encode`, `stream-decode`, `end-of-stream` | `type Person struct { Name string; Age int; Tags []string }` | `{"Ada", 36, ["math","code"]}`, `{"Grace", 45, ["navy"]}` |
+| `encode-slice` | `[]int` | `[1, 2, 3]` |
+| `encode-map` | `map[string]int` | `{"one": 1, "two": 2}` |
+| `interface-values` | `type Box struct { Value any }` | `main.Point{3, 4}` |
+| `semantic-type` | `type Status string` | `"active"` |
+| `time-values` | `time.Time` | `2009-11-10T23:00:00Z` |
+| `uuid-values` | `uuid.UUID` | `6ba7b810-9dad-11d1-80b4-00c04fd430c8` |
+| `custom-marshaler` | `type Celsius float64` (BinaryMarshaler, 8 big-endian bytes) | `21.5` |
+
+`schema-type-inference` and `dynamic-field-access` are TypeScript-specific and
+will render as single-tab blocks unless the other ports add equivalents.
+
+### 5. Snippet topic ids now collide with gobspect (open, blocks the sync)
+
+`gobspect` landed 19 snippet topics after this session's ids were chosen, so the
+"first mover, no ids to reuse" premise is stale. Its wire-format topics — the
+ones meant to render as multi-language tabbed blocks — live in
+`example_stdlib_test.go`; the rest (`query-*`, `to-json`, `diff-values`,
+`redact-output`, `format-options`, `stream-values`, `stream-types`,
+`schema-extract`, `register-decoder`) are gobspect-API-only single-tab topics.
+
+Reconciliation needed before the next sync:
+
+| ours | gobspect | action |
+|---|---|---|
+| `encode-struct` | `encode-struct` | matches |
+| `decode-struct` | `decode-struct` | matches |
+| `encode-slice` | `encode-slice` | matches |
+| `encode-map` | `encode-map` | matches |
+| `nested-struct` | `encode-nested-struct` | rename ours |
+| `interface-values` | `encode-interface` | rename ours |
+| `time-values` | `encode-time` | rename ours |
+| `custom-marshaler` | `gobencoder-type` | rename ours (confirm they mean the same thing) |
+| `stream-encode` + `stream-decode` | `stream-multiple-values` | ours splits one concept in two — merge, or keep both and accept single-tab |
+| `end-of-stream`, `uuid-values`, `define-schema`, `schema-type-inference`, `semantic-type`, `dynamic-field-access` | — | no Go variant; render single-tab |
+
+Fixture data also diverges: gobspect uses `Dog`/`Pet` for the interface topic
+and `2024-03-14T15:09:26Z` for `encode-time`, against our `main.Point{3,4}` and
+`2009-11-10T23:00:00Z`. Same-id variants must show the same data, so ours should
+adopt gobspect's values for the four shared topics and the four renamed ones.
+
+Renaming touches `examples/*.test.ts` markers and the matching `:::examples`
+references in `docs/`, and must stay in sync with whatever `pygob` and
+`gobdotnet` do.
+
+**Not done here:** the codepuke side. `content/manifest.json` still pins gobts at
+commit `bc04ab1` with `"topics": []` and `"docs": []`. The maintainer advances
+`sources.json` and runs `go run ./cmd/sync` from that repo after this lands —
+sync reads via git, so uncommitted changes here are invisible to it.
 
 ---
 
@@ -193,3 +320,40 @@ _(empty — to be filled in as implementation surfaces unplanned items)_
 - Completed: _(files created / modified, tests added, bugs fixed)_
 - Partial / blocked: _(anything unfinished or blocked, and why)_
 - Next session: _(what to do first in the next session)_
+
+### 2026-08-20 (Session 3)
+- Worked on: codepuke documentation integration — snippet markers and `docs/` pages.
+- Completed:
+  - New `examples/` directory with 6 doc-shaped test files defining 16 snippet
+    topics. Regions wrap clean bodies; imports and assertions stay outside the
+    markers. Picked up by `bun test` automatically (no `bunfig.toml` here).
+  - New `docs/` with 6 numbered pages (`00-overview` … `05-limitations`),
+    condensed from README.md, using `:::examples <topic>` in place of inline ts
+    fences. All 16 topics referenced; README.md left untouched.
+  - `tsconfig.json`: added `examples/**/*` to `include` so `bunx tsc --noEmit`
+    actually covers the examples. `tsconfig.build.json` still builds only
+    `src/**/*`, so examples never ship to `dist/`.
+  - `CLAUDE.md`: new "Documentation snippets" section plus layout entries.
+  - `src/types.ts`: `SemanticField<T>` variance fix (Discovered work #1).
+- Verified: `bun test` 305 pass / 0 fail across 15 files; `bunx tsc --noEmit`
+  clean apart from the two pre-existing `tests/encoder.test.ts` errors;
+  16 `snippet:start` / 16 `snippet:end`, all marker lines conforming;
+  defined topic set == referenced topic set; nothing in `../codepuke` touched.
+- Partial / blocked: Discovered work #2 (interface factory registration) left
+  open — it is a decoder behaviour question, not a docs one.
+- Next session: decide #2, then decide whether README.md should point at the
+  published docs pages rather than duplicating them.
+
+### 2026-08-20 (Session 3, continued)
+- Worked on: Discovered work #2 — interface-value factory registration.
+- Completed: decoder fix (`src/decoder.ts`), 4 regression tests, README
+  "Which name to register" rewrite, `docs/04-go-interop.md` update.
+- Verified: `bun test` 309 pass / 0 fail; `go_verify` 17 pass (Go on PATH);
+  `bunx tsc --noEmit` clean apart from the two pre-existing
+  `tests/encoder.test.ts` errors (Discovered work #3).
+- **New, needs a decision:** `../codepuke/content/manifest.json` changed under
+  us. `gobspect` has since landed 19 snippet topics, so the "no ids to reuse"
+  finding that drove this session's id choices is now stale. Four of our 16 ids
+  match gobspect exactly (`encode-struct`, `decode-struct`, `encode-slice`,
+  `encode-map`); several are near-misses that must be renamed to gobspect's
+  spelling, and its fixture data differs from ours. See "Discovered work" #5.

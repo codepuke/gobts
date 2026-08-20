@@ -262,7 +262,22 @@ export class GobDecoder {
   // Private: struct decoding
   // ---------------------------------------------------------------------------
 
-  private _decodeStruct(structT: StructWireType, r: GobReader): GobObject | unknown {
+  /**
+   * Decode a struct payload.
+   *
+   * `qualifiedName` is supplied only when the struct arrived as the concrete
+   * value of an interface field, where the wire carries two different names:
+   * the package-qualified name from `gob.Register` (the interface header) and
+   * the unqualified `CommonType.Name` (the type definition). The qualified one
+   * is preferred for factory lookup because it disambiguates same-named types
+   * from different packages; the unqualified one is the portable key the sister
+   * ports use, so it stays as the fallback.
+   */
+  private _decodeStruct(
+    structT: StructWireType,
+    r: GobReader,
+    qualifiedName?: string,
+  ): GobObject | unknown {
     // Pre-populate all fields with their zero values.
     const fields: Record<string, unknown> = {};
     for (const f of structT.fields) {
@@ -290,10 +305,14 @@ export class GobDecoder {
     }
 
     const typeName = structT.common.name;
-    const factory = this._factory.get(typeName);
+    const factory =
+      (qualifiedName !== undefined ? this._factory.get(qualifiedName) : undefined) ??
+      this._factory.get(typeName);
     if (factory !== undefined) {
       return factory(fields);
     }
+    // GobObject.type stays the unqualified wire name, matching the sister ports
+    // and the testdata sidecars.
     return new GobObject(typeName, fields);
   }
 
@@ -356,13 +375,17 @@ export class GobDecoder {
         const wt = decodeWireType(r2);
         this._typeRegistry.set(-typeId, wt);
       } else {
-        return this._decodeInterfaceConcrete(typeId, payload);
+        return this._decodeInterfaceConcrete(typeId, payload, typeName);
       }
     }
   }
 
   /** Decode an interface concrete value payload. It has an inner byte-count wrapper. */
-  private _decodeInterfaceConcrete(typeId: number, payload: Uint8Array): unknown {
+  private _decodeInterfaceConcrete(
+    typeId: number,
+    payload: Uint8Array,
+    qualifiedName?: string,
+  ): unknown {
     const wt = this._typeRegistry.get(typeId);
     if (wt === undefined) {
       throw new GobDecodeError(`unknown type ID ${typeId} for interface concrete value`);
@@ -371,7 +394,7 @@ export class GobDecoder {
       const r = new GobReader(payload);
       const byteCount = Number(r.readUInt());
       const structBytes = r.readRaw(byteCount);
-      return this._decodeStruct(wt.struct, new GobReader(structBytes));
+      return this._decodeStruct(wt.struct, new GobReader(structBytes), qualifiedName);
     }
     // Non-struct: fall back to standard value decoding.
     return this._decodeValue(typeId, payload);
