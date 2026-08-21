@@ -7,7 +7,6 @@ import { test, expect } from 'bun:test';
 import {
   Schema,
   SemanticType,
-  SliceOf,
   GOB_INT,
   GOB_STRING,
   encode,
@@ -23,21 +22,10 @@ test('define-schema: schemas mirror Go struct declarations', () => {
     X: GOB_INT,
     Y: GOB_INT,
   });
-
-  // Go: type Person struct {
-  //         Name string
-  //         Age  int
-  //         Tags []string
-  //     }
-  const PersonSchema = new Schema('Person', {
-    Name: GOB_STRING,
-    Age: GOB_INT,
-    Tags: SliceOf(GOB_STRING),
-  });
   // snippet:end
 
   expect(PointSchema.name).toBe('Point');
-  expect(PersonSchema.fields.map(([name]) => name)).toEqual(['Name', 'Age', 'Tags']);
+  expect(PointSchema.fields.map(([name]) => name)).toEqual(['X', 'Y']);
 });
 
 test('schema-type-inference: derive the TypeScript type from a schema', () => {

@@ -1,10 +1,28 @@
-// Doc examples for gobts — slices and maps.
+// Doc examples for gobts — scalars, slices, and maps.
 // The marked regions below are extracted by the codepuke sync (see CLAUDE.md
 // → "Documentation snippets") and published on the docs site. Keep them free
 // of test scaffolding: imports and assertions stay outside the markers so the
 // extracted snippet is clean top-level code.
 import { test, expect } from 'bun:test';
 import { GOB_INT, GOB_STRING, encode, decode } from '../src/index.ts';
+
+test('encode-scalars: scalar values need no schema', () => {
+  // snippet:start encode-scalars
+  // Go: 42 — top-level scalars carry their type on the wire, so no schema.
+  const bytes = encode(42n);
+  const answer = decode<bigint>(bytes); // 42n
+
+  // The other scalar kinds work the same way.
+  decode<string>(encode('gob')); // "gob"
+  decode<boolean>(encode(true)); // true
+  decode<number>(encode(2.5)); // 2.5 (a Go float64)
+  // snippet:end
+
+  expect(answer).toBe(42n);
+  expect(decode<string>(encode('gob'))).toBe('gob');
+  expect(decode<boolean>(encode(true))).toBe(true);
+  expect(decode<number>(encode(2.5))).toBe(2.5);
+});
 
 test('encode-slice: a slice round-trips with an explicit element type', () => {
   // snippet:start encode-slice

@@ -59,6 +59,25 @@ test('nested-struct: struct fields nest without extra framing', () => {
   expect(to.get('Y')).toBe(4n);
 });
 
+test('zero-fields-omitted: zero-valued fields are absent on the wire', () => {
+  // snippet:start zero-fields-omitted
+  const full = encode({ X: 3n, Y: 4n }, { schema: PointSchema });
+  const partial = encode({ X: 3n, Y: 0n }, { schema: PointSchema });
+
+  // Y is zero in the second value, so it is omitted from the wire entirely.
+  partial.length < full.length; // true
+
+  // The decoder restores every omitted field to its zero value.
+  const point = decode<GobObject>(partial);
+  point.get('X'); // 3n
+  point.get('Y'); // 0n
+  // snippet:end
+
+  expect(partial.length).toBeLessThan(full.length);
+  expect(point.get('X')).toBe(3n);
+  expect(point.get('Y')).toBe(0n);
+});
+
 test('dynamic-field-access: read a struct with no registered type', () => {
   const bytes = encode({ X: 3n, Y: 4n }, { schema: PointSchema });
 

@@ -9,6 +9,13 @@ conveniences that build a fresh encoder or decoder per call. `GobEncoder` and
 `GobDecoder` are the stream-oriented forms, and they keep type state across
 messages.
 
+## Scalars
+
+Scalar values — integers, floats, booleans, strings — need no schema at all: the
+wire type is inferred from the value itself.
+
+:::examples encode-scalars
+
 ## Collections
 
 A top-level slice or map carries no struct schema, so the element type — and for
@@ -27,15 +34,11 @@ are not necessarily strings.
 Reusing one `GobEncoder` across messages is what makes gob cheap for RPC: each
 type definition is written once, before the first value that needs it, and never
 repeated. `bytes()` drains the accumulated buffer while preserving that type
-state; `reset()` clears it to start a fresh stream.
+state; `reset()` clears it to start a fresh stream. On the read side a
+`GobDecoder` yields every value in the buffer, and `feed()` appends more bytes
+at any time, which is how you drive it from a socket or a chunked HTTP body.
 
-:::examples stream-encode
-
-On the read side a `GobDecoder` yields every value in the buffer. `feed()`
-appends more bytes at any time, which is how you drive it from a socket or a
-chunked HTTP body.
-
-:::examples stream-decode
+:::examples stream-multiple-values
 
 `gobts` has no async API. Wrap the decoder in your own chunk loop — the caller
 owns whatever stream they put around it, and the library never opens, closes, or

@@ -14,7 +14,7 @@ Working log for implementing `gobts`. Claude Code reads this at the start of eac
 ## Current state
 
 **Phase:** All phases complete ✅ — plus documentation-snippet integration (2026-08-20).
-**Last session:** 2026-08-20 (Session 3) — codepuke snippet markers + `docs/` pages.
+**Last session:** 2026-08-20 (Session 4) — cross-port snippet data harmonization: stream topic merge, canonical Point fixtures, two new topics. See Discovered work #6.
 **Branch:** main
 
 **Next session:** Two decoder/API issues surfaced while writing the doc examples — see "Discovered work". Otherwise: performance (see bench/results/baseline.md) or v1 release prep.
@@ -233,14 +233,15 @@ ids independently. See section 5 — the ids were reconciled on 2026-08-20 with
 gobts's vocabulary winning the ties, so the 16 ids below did become the contract,
 but by agreement rather than by precedence.
 
-Topics and their host files (see CLAUDE.md → "Documentation snippets"):
+Topics and their host files (see CLAUDE.md → "Documentation snippets"; tables
+updated 2026-08-20 by the harmonization pass, section 6):
 
 | Topic | File |
 |---|---|
 | `define-schema`, `schema-type-inference`, `semantic-type` | `examples/schemas.test.ts` |
-| `encode-struct`, `decode-struct`, `nested-struct`, `dynamic-field-access` | `examples/structs.test.ts` |
-| `encode-slice`, `encode-map` | `examples/collections.test.ts` |
-| `stream-encode`, `stream-decode`, `end-of-stream` | `examples/streaming.test.ts` |
+| `encode-struct`, `decode-struct`, `nested-struct`, `zero-fields-omitted`, `dynamic-field-access` | `examples/structs.test.ts` |
+| `encode-scalars`, `encode-slice`, `encode-map` | `examples/collections.test.ts` |
+| `stream-multiple-values`, `end-of-stream` | `examples/streaming.test.ts` |
 | `interface-values` | `examples/interfaces.test.ts` |
 | `time-values`, `uuid-values`, `custom-marshaler` | `examples/codecs.test.ts` |
 
@@ -249,9 +250,11 @@ Shared fixture data every port must mirror:
 | Topic | Go shape | Value |
 |---|---|---|
 | `define-schema`, `encode-struct`, `decode-struct`, `dynamic-field-access` | `type Point struct { X, Y int }` | `{X: 3, Y: 4}` |
+| `zero-fields-omitted` | `type Point struct { X, Y int }` | full `{3, 4}` vs partial `{3, 0}`; compare byte lengths, decode restores the zero |
 | `nested-struct` | `type Line struct { From, To Point }` | `From{1,2}`, `To{3,4}` |
 | `schema-type-inference` | `type Person struct { Name string; Age int }` | `{"Ada", 36}` |
-| `stream-encode`, `stream-decode`, `end-of-stream` | `type Person struct { Name string; Age int; Tags []string }` | `{"Ada", 36, ["math","code"]}`, `{"Grace", 45, ["navy"]}` |
+| `stream-multiple-values`, `end-of-stream` | `type Point struct { X, Y int }` | one encoder: `{3, 4}` then `{5, 6}` |
+| `encode-scalars` | `int` (+ a short idiomatic scalar tour) | anchor value `42` |
 | `encode-slice` | `[]int` | `[1, 2, 3]` |
 | `encode-map` | `map[string]int` | `{"one": 1, "two": 2}` |
 | `interface-values` | `type Box struct { Value any }` | `main.Point{3, 4}` |
@@ -290,23 +293,66 @@ pygob after their renames.
 they were not merged. Ours registers a codec with the library; gobspect's shows
 a Go type implementing `GobEncoder`/`GobDecode`, and stays a gobspect-only topic.
 
-Still open, tracked but not done:
+Still open at the time this section was written — both items were resolved on
+the gobts side by the harmonization pass, section 6:
 
 - **`stream-encode` + `stream-decode` vs `stream-multiple-values`.** gobspect,
   pygob, and gobdotnet each use one combined topic where we use two. Left as-is
   rather than renamed into a half-match; merging means rewriting our example
-  bodies and the prose in `docs/02-encoding-decoding.md`.
+  bodies and the prose in `docs/02-encoding-decoding.md`. *(Merged in section 6.)*
 - **Fixture data still diverges** on the shared multi-tab topics. gobspect uses
   `Dog`/`Pet` for `interface-values` and `2024-03-14T15:09:26Z` for
   `time-values`; ours uses `main.Point{3,4}` and `2009-11-10T23:00:00Z`;
   gobdotnet's are pinned to its `testdata/*.gob` fixtures. Same-id variants are
   supposed to show the same data, so a tabbed block currently shows four
-  variants doing the same thing to different values.
+  variants doing the same thing to different values. *(Canonical data agreed
+  cross-port; gobts aligned in section 6.)*
 
 **Not done here:** the codepuke side. `content/manifest.json` still pins gobts at
 commit `bc04ab1` with `"topics": []` and `"docs": []`. The maintainer advances
 `sources.json` and runs `go run ./cmd/sync` from that repo after this lands —
 sync reads via git, so uncommitted changes here are invisible to it.
+
+### 6. Snippet data harmonized to the cross-port canon (2026-08-20)
+
+Follow-up to section 5: the canonical fixture data was agreed across all four
+ports (running struct `Point{X: 3, Y: 4}`, bigint on our side), and gobts was
+brought onto it. The tables in section 4 were updated in place and are current.
+
+Changes:
+
+- **Stream topics merged.** `stream-encode` + `stream-decode` replaced by the
+  single combined `stream-multiple-values` (the id the other three ports already
+  use): one `GobEncoder` encodes `Point{3n,4n}` then `Point{5n,6n}`, then a
+  `GobDecoder` iterates both. The topic's point is that the type definition is
+  sent once. The one-line comment that `bytes()` drains the buffer but keeps
+  type state survives; the Person/Ada/Grace stream fixtures are gone from
+  `examples/streaming.test.ts`.
+- **`end-of-stream`** switched from the Person stream to the same canonical
+  `Point{3n,4n}`, `{5n,6n}` stream. The tryDecode/hasMore vs decode-throws
+  teaching is unchanged.
+- **`define-schema`** trimmed to the hand-declared Point schema only; the Person
+  schema left the marked region so all four tabs show the same thing.
+- **New topic `encode-scalars`** in `examples/collections.test.ts`: anchor value
+  `42`, plus a short idiomatic tour (string/bool/float one-shots).
+- **New topic `zero-fields-omitted`** in `examples/structs.test.ts`: full
+  `Point{3n,4n}` vs partial `Point{3n,0n}`, byte-length comparison shows the
+  zero field absent on the wire, decode restores it.
+- **Docs:** `docs/02-encoding-decoding.md` streaming prose reworked around the
+  single `:::examples stream-multiple-values` block and a new Scalars section
+  references `encode-scalars`; `docs/04-go-interop.md` gained a "Zero values on
+  the wire" section referencing `zero-fields-omitted` (replacing the redundant
+  wire-format-notes bullet).
+
+Deliberately unchanged, verified against the canon: `encode-struct`,
+`decode-struct`, `nested-struct`, `encode-slice`, `encode-map`,
+`interface-values`, `time-values`, `uuid-values`, `custom-marshaler`,
+`semantic-type`, and `schema-type-inference` (now shared with pygob; the
+Person/Ada/36 content is the canon). `dynamic-field-access` stays a gobts-only
+topic — merging it into `decode-struct` was considered and rejected because it
+shows keys/values/iteration the other ports do not.
+
+Topic count is now 17: 16 − 2 stream ids + 1 merged + 2 new.
 
 ---
 
@@ -365,3 +411,17 @@ sync reads via git, so uncommitted changes here are invisible to it.
   match gobspect exactly (`encode-struct`, `decode-struct`, `encode-slice`,
   `encode-map`); several are near-misses that must be renamed to gobspect's
   spelling, and its fixture data differs from ours. See "Discovered work" #5.
+
+### 2026-08-20 (Session 4)
+- Worked on: cross-port snippet data harmonization (Discovered work #5 → #6).
+- Completed: merged `stream-encode`/`stream-decode` into `stream-multiple-values`
+  on the canonical Point stream; `end-of-stream` moved to the same stream;
+  `define-schema` trimmed to Point only; new topics `encode-scalars` and
+  `zero-fields-omitted`; docs pages 02 and 04 updated; sections 4/5/6 of this
+  file updated. Working tree left dirty on purpose — the maintainer commits.
+- Verified: `bun test` 310 pass / 0 fail; 17 `snippet:start` / 17 `snippet:end`;
+  no duplicate topic ids; defined topic set equals the docs-referenced set; no
+  `stream-encode`/`stream-decode` id remains in `examples/` or `docs/` (the old
+  ids survive only as history in this file).
+- Next session: nothing new — codepuke-side sync (`sources.json` + `cmd/sync`)
+  still pending, as recorded in section 5.

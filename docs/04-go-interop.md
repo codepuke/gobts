@@ -50,6 +50,15 @@ format rather than implemented on top of it:
 - Field **types** must not change within a stream. Gob has no field-level type
   negotiation.
 
+## Zero values on the wire
+
+Gob never sends a zero-valued field. Encoding `Point{3, 0}` writes only `X`, so
+the byte stream is shorter than the one for `Point{3, 4}`. The decoder
+pre-populates every field with its zero value before applying the wire's field
+deltas, so the omitted `Y` comes back as `0n`.
+
+:::examples zero-fields-omitted
+
 ## Wire format notes
 
 These are the behaviours most likely to surprise you when comparing output
@@ -63,10 +72,6 @@ against Go by hand.
 
 - **Go map iteration is non-deterministic.** The key/value order in a
   map-containing stream varies between runs. Never byte-compare such output.
-
-- **Zero-valued fields are omitted on the wire.** The decoder pre-populates
-  every field with its zero value before the delta loop, so an omitted field
-  arrives as `0n`, `false`, `""`, and so on.
 
 - **Floats are byte-reversed IEEE 754**, then encoded as an unsigned integer.
   That is deliberate — it makes trailing zeros compress.
