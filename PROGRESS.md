@@ -226,11 +226,12 @@ undefined)` overload under the current `bun-types`. Predates this session;
 
 ### 4. Cross-language snippet topic contract (codepuke)
 
-gobts is the **first mover** — no sibling repo had any `snippet:start` marker,
-and `content/manifest.json` listed every source with `"topics": []`. The 16 ids
-below are therefore now the contract. `pygob`, `gobdotnet`, and `gobspect` must
-reuse each id **verbatim**, and use the same fixture data, or the site's tabbed
-blocks will show variants doing different things.
+gobts was written believing itself the first mover — at the time no sibling repo
+had any `snippet:start` marker and `content/manifest.json` listed every source
+with `"topics": []`. That premise turned out to be wrong: all four repos landed
+ids independently. See section 5 — the ids were reconciled on 2026-08-20 with
+gobts's vocabulary winning the ties, so the 16 ids below did become the contract,
+but by agreement rather than by precedence.
 
 Topics and their host files (see CLAUDE.md → "Documentation snippets"):
 
@@ -262,38 +263,45 @@ Shared fixture data every port must mirror:
 `schema-type-inference` and `dynamic-field-access` are TypeScript-specific and
 will render as single-tab blocks unless the other ports add equivalents.
 
-### 5. Snippet topic ids now collide with gobspect (open, blocks the sync)
+### 5. Snippet topic ids reconciled across all four repos (resolved 2026-08-20)
 
-`gobspect` landed 19 snippet topics after this session's ids were chosen, so the
-"first mover, no ids to reuse" premise is stale. Its wire-format topics — the
-ones meant to render as multi-language tabbed blocks — live in
-`example_stdlib_test.go`; the rest (`query-*`, `to-json`, `diff-values`,
-`redact-output`, `format-options`, `stream-values`, `stream-types`,
-`schema-extract`, `register-decoder`) are gobspect-API-only single-tab topics.
+`gobspect`, `pygob`, and `gobdotnet` each landed their own topic ids believing
+themselves the first mover, so four vocabularies existed at once. Reconciled in
+a `gobdotnet` session on 2026-08-20, with the maintainer breaking ties **toward
+gobts** — the opposite direction from what this section originally proposed.
+**gobts markers and `:::examples` references were left unchanged.** Do not
+"fix" them back.
 
-Reconciliation needed before the next sync:
+Renames applied elsewhere:
 
-| ours | gobspect | action |
+| repo | from | to |
 |---|---|---|
-| `encode-struct` | `encode-struct` | matches |
-| `decode-struct` | `decode-struct` | matches |
-| `encode-slice` | `encode-slice` | matches |
-| `encode-map` | `encode-map` | matches |
-| `nested-struct` | `encode-nested-struct` | rename ours |
-| `interface-values` | `encode-interface` | rename ours |
-| `time-values` | `encode-time` | rename ours |
-| `custom-marshaler` | `gobencoder-type` | rename ours (confirm they mean the same thing) |
-| `stream-encode` + `stream-decode` | `stream-multiple-values` | ours splits one concept in two — merge, or keep both and accept single-tab |
-| `end-of-stream`, `uuid-values`, `define-schema`, `schema-type-inference`, `semantic-type`, `dynamic-field-access` | — | no Go variant; render single-tab |
+| gobspect | `encode-nested-struct` | `nested-struct` |
+| gobspect | `encode-interface` | `interface-values` |
+| gobspect | `encode-time` | `time-values` |
+| pygob | `interface-value` | `interface-values` |
+| pygob | `decode-stream-until-eof` | `end-of-stream` |
+| gobdotnet | `encode-scalar`, `stream-multiple`, `stream-eof`, `decode-interface`, `decode-time`, `decode-uuid`, `custom-codec`, `semantic-types` | `encode-scalars`, `stream-multiple-values`, `end-of-stream`, `interface-values`, `time-values`, `uuid-values`, `custom-marshaler`, `semantic-type` |
 
-Fixture data also diverges: gobspect uses `Dog`/`Pet` for the interface topic
-and `2024-03-14T15:09:26Z` for `encode-time`, against our `main.Point{3,4}` and
-`2009-11-10T23:00:00Z`. Same-id variants must show the same data, so ours should
-adopt gobspect's values for the four shared topics and the four renamed ones.
+`go test ./...` green in gobspect and `pytest tests/test_examples.py` green in
+pygob after their renames.
 
-Renaming touches `examples/*.test.ts` markers and the matching `:::examples`
-references in `docs/`, and must stay in sync with whatever `pygob` and
-`gobdotnet` do.
+`custom-marshaler` vs gobspect's `gobencoder-type`: **not the same concept**, so
+they were not merged. Ours registers a codec with the library; gobspect's shows
+a Go type implementing `GobEncoder`/`GobDecode`, and stays a gobspect-only topic.
+
+Still open, tracked but not done:
+
+- **`stream-encode` + `stream-decode` vs `stream-multiple-values`.** gobspect,
+  pygob, and gobdotnet each use one combined topic where we use two. Left as-is
+  rather than renamed into a half-match; merging means rewriting our example
+  bodies and the prose in `docs/02-encoding-decoding.md`.
+- **Fixture data still diverges** on the shared multi-tab topics. gobspect uses
+  `Dog`/`Pet` for `interface-values` and `2024-03-14T15:09:26Z` for
+  `time-values`; ours uses `main.Point{3,4}` and `2009-11-10T23:00:00Z`;
+  gobdotnet's are pinned to its `testdata/*.gob` fixtures. Same-id variants are
+  supposed to show the same data, so a tabbed block currently shows four
+  variants doing the same thing to different values.
 
 **Not done here:** the codepuke side. `content/manifest.json` still pins gobts at
 commit `bc04ab1` with `"topics": []` and `"docs": []`. The maintainer advances
